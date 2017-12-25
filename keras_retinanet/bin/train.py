@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 """
 Copyright 2017-2018 Fizyr (https://fizyr.com)
 
@@ -30,13 +28,13 @@ if __name__ == "__main__" and __package__ is None:
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
     import keras_retinanet.bin
     __package__ = "keras_retinanet.bin"
-
 # Change these to absolute imports if you copy this script outside the keras_retinanet package.
 from .. import losses
 from .. import layers
 from ..callbacks import RedirectModel
 from ..preprocessing.pascal_voc import PascalVocGenerator
 from ..preprocessing.csv_generator import CSVGenerator
+from ..preprocessing.csv_rtsd_generator import CSVRTSDGenerator
 from ..models.resnet import ResNet50RetinaNet
 from ..utils.keras_version import check_keras_version
 
@@ -164,6 +162,25 @@ def create_generators(args):
             )
         else:
             validation_generator = None
+    elif args.dataset_type == 'csv_rtsd':
+        train_generator = CSVRTSDGenerator(
+            args.annotations,
+            args.classes,
+            train_image_data_generator,
+            args.images_dir,
+            batch_size=args.batch_size
+        )
+
+        if args.val_annotations:
+            validation_generator = CSVRTSDGenerator(
+                args.val_annotations,
+                args.classes,
+                val_image_data_generator,
+                args.images_dir,
+                batch_size=args.batch_size
+            )
+        else:
+            validation_generator = None
     else:
         raise ValueError('Invalid data type received: {}'.format(args.dataset_type))
 
@@ -206,6 +223,11 @@ def parse_args(args):
     csv_parser.add_argument('classes', help='Path to a CSV file containing class label mapping.')
     csv_parser.add_argument('--val-annotations', help='Path to CSV file containing annotations for validation (optional).')
 
+    csv_rtsd_parser = subparsers.add_parser('csv_rtsd')
+    csv_rtsd_parser.add_argument('annotations', help='Path to CSV file containing annotations for training.')
+    csv_rtsd_parser.add_argument('classes', help='Path to a CSV file containing class label mapping.')
+    csv_rtsd_parser.add_argument('--images-dir', help='Path to images. (optional)', default=None)
+    csv_rtsd_parser.add_argument('--val-annotations', help='Path to CSV file containing annotations for validation (optional).')
     parser.add_argument('--weights',       help='Weights to use for initialization (defaults to ImageNet).', default='imagenet')
     parser.add_argument('--batch-size',    help='Size of the batches.', default=1, type=int)
     parser.add_argument('--gpu',           help='Id of the GPU to use (as reported by nvidia-smi).')
