@@ -32,8 +32,11 @@ if __name__ == "__main__" and __package__ is None:
 from .. import losses
 from .. import layers
 from ..callbacks import RedirectModel
+from ..callbacks.eval import Evaluate
 from ..preprocessing.pascal_voc import PascalVocGenerator
 from ..preprocessing.csv_generator import CSVGenerator
+from ..models.resnet import resnet50_retinanet, custom_objects
+from ..utils.transform import random_transform_generator
 from ..preprocessing.csv_rtsd_generator import CSVRTSDGenerator
 from ..models.resnet import ResNet50RetinaNet
 from ..utils.keras_version import check_keras_version
@@ -47,24 +50,24 @@ def get_session():
 
 def create_models(num_classes, weights='imagenet', multi_gpu=0):
     # create "base" model (no NMS)
-    image = keras.layers.Input((None, None, 3))
 
     # Keras recommends initialising a multi-gpu model on the CPU to ease weight sharing, and to prevent OOM errors.
     # optionally wrap in a parallel model
     if multi_gpu > 1:
         with tf.device('/cpu:0'):
-            model = ResNet50RetinaNet(image, num_classes=num_classes, weights=weights, nms=False)
+            model = resnet50_retinanet(num_classes, weights=weights, nms=False)
         training_model = multi_gpu_model(model, gpus=multi_gpu)
-    else:
-        model = ResNet50RetinaNet(image, num_classes=num_classes, weights=weights, nms=False)
-        training_model = model
 
-    # append NMS for prediction only
-    classification   = model.outputs[1]
-    detections       = model.outputs[2]
-    boxes            = keras.layers.Lambda(lambda x: x[:, :, :4])(detections)
-    detections       = layers.NonMaximumSuppression(name='nms')([boxes, classification, detections])
-    prediction_model = keras.models.Model(inputs=model.inputs, outputs=model.outputs[:2] + [detections])
+        # append NMS for prediction only
+        classification   = model.outputs[1]
+        detections       = model.outputs[2]
+        boxes            = keras.layers.Lambda(lambda x: x[:, :, :4])(detections)
+        detections       = layers.NonMaximumSuppression(name='nms')([boxes, classification, detections])
+        prediction_model = keras.models.Model(inputs=model.inputs, outputs=model.outputs[:2] + [detections])
+    else:
+        model            = resnet50_retinanet(num_classes, weights=weights, nms=True)
+        training_model   = model
+        prediction_model = model
 
     # compile model
     training_model.compile(
@@ -93,11 +96,14 @@ def create_callbacks(model, training_model, prediction_model, validation_generat
         checkpoint = RedirectModel(checkpoint, prediction_model)
         callbacks.append(checkpoint)
 
-    if args.dataset_type == 'coco' and args.evaluation:
-        from ..callbacks.coco import CocoEval
+    if args.evaluation and validation_generator:
+        if args.dataset_type == 'coco':
+            from ..callbacks.coco import CocoEval
 
-        # use prediction model for evaluation
-        evaluation = CocoEval(validation_generator)
+            # use prediction model for evaluation
+            evaluation = CocoEval(validation_generator)
+        else:
+            evaluation = Evaluate(validation_generator)
         evaluation = RedirectModel(evaluation, prediction_model)
         callbacks.append(evaluation)
 
@@ -108,11 +114,8 @@ def create_callbacks(model, training_model, prediction_model, validation_generat
 
 
 def create_generators(args):
-    # create image data generator objects
-    train_image_data_generator = keras.preprocessing.image.ImageDataGenerator(
-        horizontal_flip=True,
-    )
-    val_image_data_generator = keras.preprocessing.image.ImageDataGenerator()
+    # create random transform generator for augmenting training data
+    transform_generator = random_transform_generator(flip_x_chance=0.5)
 
     if args.dataset_type == 'coco':
         # import here to prevent unnecessary dependency on cocoapi
@@ -121,35 +124,33 @@ def create_generators(args):
         train_generator = CocoGenerator(
             args.coco_path,
             'train2017',
-            train_image_data_generator,
+            transform_generator=transform_generator,
             batch_size=args.batch_size
         )
 
         validation_generator = CocoGenerator(
             args.coco_path,
             'val2017',
-            val_image_data_generator,
             batch_size=args.batch_size
         )
     elif args.dataset_type == 'pascal':
         train_generator = PascalVocGenerator(
             args.pascal_path,
             'trainval',
-            train_image_data_generator,
+            transform_generator=transform_generator,
             batch_size=args.batch_size
         )
 
         validation_generator = PascalVocGenerator(
             args.pascal_path,
             'test',
-            val_image_data_generator,
             batch_size=args.batch_size
         )
     elif args.dataset_type == 'csv':
         train_generator = CSVGenerator(
             args.annotations,
             args.classes,
-            train_image_data_generator,
+            transform_generator=transform_generator,
             batch_size=args.batch_size
         )
 
@@ -157,7 +158,6 @@ def create_generators(args):
             validation_generator = CSVGenerator(
                 args.val_annotations,
                 args.classes,
-                val_image_data_generator,
                 batch_size=args.batch_size
             )
         else:
@@ -202,6 +202,11 @@ def check_args(parsed_args):
             "Batch size ({}) must be equal to or higher than the number of GPUs ({})".format(parsed_args.batch_size,
                                                                                              parsed_args.multi_gpu))
 
+    if parsed_args.multi_gpu > 1 and parsed_args.snapshot:
+        raise ValueError(
+            "Multi GPU training ({}) and resuming from snapshots ({}) is not supported.".format(parsed_args.multi_gpu,
+                                                                                                parsed_args.snapshot))
+
     return parsed_args
 
 
@@ -212,8 +217,6 @@ def parse_args(args):
 
     coco_parser = subparsers.add_parser('coco')
     coco_parser.add_argument('coco_path', help='Path to dataset directory (ie. /tmp/COCO).')
-    coco_parser.add_argument('--no-evaluation', help='Disable per epoch evaluation.', dest='evaluation', action='store_false')
-    coco_parser.set_defaults(evaluation=True)
 
     pascal_parser = subparsers.add_parser('pascal')
     pascal_parser.add_argument('pascal_path', help='Path to dataset directory (ie. /tmp/VOCdevkit).')
@@ -222,6 +225,10 @@ def parse_args(args):
     csv_parser.add_argument('annotations', help='Path to CSV file containing annotations for training.')
     csv_parser.add_argument('classes', help='Path to a CSV file containing class label mapping.')
     csv_parser.add_argument('--val-annotations', help='Path to CSV file containing annotations for validation (optional).')
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--weights',  help='Weights to use for initialization (defaults to \'imagenet\').', default='imagenet')
+    group.add_argument('--snapshot', help='Snapshot to resume training with.')
 
     csv_rtsd_parser = subparsers.add_parser('csv_rtsd')
     csv_rtsd_parser.add_argument('annotations', help='Path to CSV file containing annotations for training.')
@@ -236,7 +243,7 @@ def parse_args(args):
     parser.add_argument('--steps',         help='Number of steps per epoch.', type=int, default=10000)
     parser.add_argument('--snapshot-path', help='Path to store snapshots of models during training (defaults to \'./snapshots\')', default='./snapshots')
     parser.add_argument('--no-snapshots',  help='Disable saving snapshots.', dest='snapshots', action='store_false')
-    parser.set_defaults(snapshots=True)
+    parser.add_argument('--no-evaluation', help='Disable per epoch evaluation.', dest='evaluation', action='store_false')
 
     return check_args(parser.parse_args(args))
 
@@ -259,8 +266,14 @@ def main(args=None):
     train_generator, validation_generator = create_generators(args)
 
     # create the model
-    print('Creating model, this may take a second...')
-    model, training_model, prediction_model = create_models(num_classes=train_generator.num_classes(), weights=args.weights, multi_gpu=args.multi_gpu)
+    if args.snapshot:
+        print('Loading model, this may take a second...')
+        model            = keras.models.load_model(args.snapshot, custom_objects=custom_objects)
+        training_model   = model
+        prediction_model = model
+    else:
+        print('Creating model, this may take a second...')
+        model, training_model, prediction_model = create_models(num_classes=train_generator.num_classes(), weights=args.weights, multi_gpu=args.multi_gpu)
 
     # print model summary
     print(model.summary())
