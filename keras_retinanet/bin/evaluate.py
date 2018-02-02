@@ -32,6 +32,7 @@ if __name__ == "__main__" and __package__ is None:
 # Change these to absolute imports if you copy this script outside the keras_retinanet package.
 from ..preprocessing.pascal_voc import PascalVocGenerator
 from ..preprocessing.csv_generator import CSVGenerator
+from ..preprocessing.csv_rtsd_generator import CSVRTSDGenerator
 from ..utils.keras_version import check_keras_version
 from ..utils.eval import evaluate
 from ..models.resnet import custom_objects
@@ -62,6 +63,12 @@ def create_generator(args):
             args.annotations,
             args.classes,
         )
+    elif args.dataset_type == 'csv_rtsd':
+        validation_generator = CSVRTSDGenerator(
+            args.annotations,
+            args.classes,
+            args.images_dir
+        )
     else:
         raise ValueError('Invalid data type received: {}'.format(args.dataset_type))
 
@@ -82,6 +89,13 @@ def parse_args(args):
     csv_parser = subparsers.add_parser('csv')
     csv_parser.add_argument('annotations', help='Path to CSV file containing annotations for evaluation.')
     csv_parser.add_argument('classes', help='Path to a CSV file containing class label mapping.')
+
+    csv_rtsd_parser = subparsers.add_parser('csv_rtsd')
+    csv_rtsd_parser.add_argument('annotations', help='Path to CSV file containing annotations for training.')
+    csv_rtsd_parser.add_argument('classes', help='Path to a CSV file containing class label mapping.')
+    csv_rtsd_parser.add_argument('--images-dir', help='Path to images. (optional)', default=None)
+    csv_rtsd_parser.add_argument('--val-annotations',
+                                 help='Path to CSV file containing annotations for validation (optional).')
 
     parser.add_argument('model',             help='Path to RetinaNet model.')
     parser.add_argument('--gpu',             help='Id of the GPU to use (as reported by nvidia-smi).')

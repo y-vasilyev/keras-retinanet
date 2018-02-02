@@ -38,7 +38,7 @@ from ..preprocessing.csv_generator import CSVGenerator
 from ..models.resnet import resnet50_retinanet, custom_objects
 from ..utils.transform import random_transform_generator
 from ..preprocessing.csv_rtsd_generator import CSVRTSDGenerator
-from ..models.resnet import ResNet152RetinaNet
+from ..models.resnet import resnet152_retinanet
 from ..utils.keras_version import check_keras_version
 
 
@@ -55,7 +55,7 @@ def create_models(num_classes, weights='imagenet', multi_gpu=0):
     # optionally wrap in a parallel model
     if multi_gpu > 1:
         with tf.device('/cpu:0'):
-            model = resnet50_retinanet(num_classes, weights=weights, nms=False)
+            model = resnet152_retinanet(num_classes, weights=weights, nms=False)
         training_model = multi_gpu_model(model, gpus=multi_gpu)
 
         # append NMS for prediction only
@@ -166,7 +166,6 @@ def create_generators(args):
         train_generator = CSVRTSDGenerator(
             args.annotations,
             args.classes,
-            train_image_data_generator,
             args.images_dir,
             batch_size=args.batch_size
         )
@@ -175,7 +174,6 @@ def create_generators(args):
             validation_generator = CSVRTSDGenerator(
                 args.val_annotations,
                 args.classes,
-                val_image_data_generator,
                 args.images_dir,
                 batch_size=args.batch_size
             )
