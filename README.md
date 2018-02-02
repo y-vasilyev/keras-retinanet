@@ -9,7 +9,7 @@ by Tsung-Yi Lin, Priya Goyal, Ross Girshick, Kaiming He and Piotr Dollár.
    Note that due to inconsistencies with how `tensorflow` should be installed,
    this package does not define a dependency on `tensorflow` as it will try to install that (which at least on Arch Linux results in an incorrect installation).
    Please make sure `tensorflow` is installed as per your systems requirements.
-   Also, make sure Keras 2.1.2 is installed.
+   Also, make sure Keras 2.1.3 is installed.
 3) As of writing, this repository requires the master branch of `keras-resnet` (run `pip install --user --upgrade git+https://github.com/broadinstitute/keras-resnet`).
 4) Optionally, install `pycocotools` if you want to train / test on the MS COCO dataset by running `pip install --user git+https://github.com/cocodataset/cocoapi.git#subdirectory=PythonAPI`.
 
@@ -54,9 +54,9 @@ retinanet-train csv <path to csv file containing annotations> <path to csv file 
 ```
 
 In general, the steps to train on your own datasets are:
-1) Create a model by calling for instance `keras_retinanet.models.ResNet50RetinaNet` and compile it.
+1) Create a model by calling for instance `keras_retinanet.models.resnet50_retinanet` and compile it.
    Empirically, the following compile arguments have been found to work well:
-```
+```python
 model.compile(
     loss={
         'regression'    : keras_retinanet.losses.regression_loss,
@@ -71,14 +71,14 @@ model.compile(
 ## Testing
 An example of testing the network can be seen in [this Notebook](https://github.com/delftrobotics/keras-retinanet/blob/master/examples/ResNet50RetinaNet%20-%20COCO%202017.ipynb).
 In general, output can be retrieved from the network as follows:
-```
+```python
 _, _, detections = model.predict_on_batch(inputs)
 ```
 
 Where `detections` are the resulting detections, shaped `(None, None, 4 + num_classes)` (for `(x1, y1, x2, y2, cls1, cls2, ...)`).
 
 Loading models can be done in the following manner:
-```
+```python
 from keras_retinanet.models.resnet import custom_objects
 model = keras.models.load_model('/path/to/model.h5', custom_objects=custom_objects)
 ```
@@ -139,7 +139,7 @@ bird,2
 ## Results
 
 ### MS COCO
-The MS COCO model can be downloaded [here](https://delftrobotics-my.sharepoint.com/personal/h_gaiser_fizyr_com/_layouts/15/guestaccess.aspx?docid=0386bb358d0d44762a7c705cdac052c2f&authkey=AfdlNvj1hPD8ZPShcqUFUZg&expiration=2017-12-28T16%3A09%3A58.000Z&e=5585e7262ac64651bf59990b54b406cd). Results using the `cocoapi` are shown below (note: according to the paper, this configuration should achieve a mAP of 0.343).
+The MS COCO model can be downloaded [here](https://github.com/fizyr/keras-retinanet/releases/download/0.1/resnet50_coco_best_v1.2.2.h5). Results using the `cocoapi` are shown below (note: according to the paper, this configuration should achieve a mAP of 0.343).
 
 ```
  Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.325
@@ -166,8 +166,9 @@ Example output images using `keras-retinanet` are shown below.
 </p>
 
 ### Notes
-* This repository requires Keras 2.1.2.
-* This repository is tested using OpenCV 3.3.
+* This repository requires Keras 2.1.3.
+* This repository is tested using OpenCV 3.4.
+* Warnings such as `UserWarning: Output "non_maximum_suppression_1" missing from loss dictionary.` can safely be ignored. These warnings indicate no loss is connected to these outputs, but they are intended to be outputs of the network for the user (ie. resulting network detections) and not loss outputs.
 
 Contributions to this project are welcome.
 
