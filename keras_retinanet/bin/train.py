@@ -35,7 +35,7 @@ from ..callbacks import RedirectModel
 from ..preprocessing.pascal_voc import PascalVocGenerator
 from ..preprocessing.csv_generator import CSVGenerator
 from ..preprocessing.csv_rtsd_generator import CSVRTSDGenerator
-from ..models.resnet import ResNet50RetinaNet
+from ..models.resnet import ResNet152RetinaNet
 from ..utils.keras_version import check_keras_version
 
 
@@ -53,10 +53,10 @@ def create_models(num_classes, weights='imagenet', multi_gpu=0):
     # optionally wrap in a parallel model
     if multi_gpu > 1:
         with tf.device('/cpu:0'):
-            model = ResNet50RetinaNet(image, num_classes=num_classes, weights=weights, nms=False)
+            model = ResNet152RetinaNet(image, num_classes=num_classes, weights=weights, nms=False)
         training_model = multi_gpu_model(model, gpus=multi_gpu)
     else:
-        model = ResNet50RetinaNet(image, num_classes=num_classes, weights=weights, nms=False)
+        model = ResNet152RetinaNet(image, num_classes=num_classes, weights=weights, nms=False)
         training_model = model
 
     # append NMS for prediction only
